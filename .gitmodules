@@ -1,0 +1,3 @@
+[submodule "itergen"]
+	path = itergen
+	url = https://github.com/structuredllm/itergen.git
