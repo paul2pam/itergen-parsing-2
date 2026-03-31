@@ -1,0 +1,26 @@
+start: tool_call
+
+tool_call: "{" "\"name\"" ":" tool_name "," "\"args\"" ":" arglist "}"
+
+tool_name: ESCAPED_STRING
+
+arglist: "{" "}" | "{" individual_arg ("," individual_arg)* "}"
+
+individual_arg: ESCAPED_STRING ":" value
+
+value: ESCAPED_STRING
+     | NUMBER
+     | list_val
+     | dict_val
+     | bool_val
+
+bool_val: "true" | "false"
+
+list_val: "[" "]" | "[" value ("," value)* "]"
+
+dict_val: "{" ESCAPED_STRING ":" value ("," ESCAPED_STRING ":" value)* "}"
+
+%import common.ESCAPED_STRING
+%import common.NUMBER
+%import common.WS
+%ignore WS

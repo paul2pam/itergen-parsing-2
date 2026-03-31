@@ -54,7 +54,7 @@ six==1.17.0
 sympy==1.14.0
 termcolor==3.3.0
 tokenizers==0.22.2
-torch==2.11.0
+torch==2.11.0+cu128
 tqdm==4.67.3
 transformers==5.3.0
 typer==0.24.1
