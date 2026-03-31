@@ -19,6 +19,7 @@ def _get_logits_warper(self, generation_config, device=None):
 PreTrainedModel._get_logits_warper = _get_logits_warper
 
 from itergen.main import IterGen
+from tools import TOOLS
 
 with open(os.path.join(os.path.dirname(__file__), 'grammar.txt')) as f:
     grammar = f.read()
