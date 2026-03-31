@@ -20,7 +20,7 @@ list_val: "[" "]" | "[" value ("," value)* "]"
 
 dict_val: "{" ESCAPED_STRING ":" value ("," ESCAPED_STRING ":" value)* "}"
 
-%import common.ESCAPED_STRING
+ESCAPED_STRING: "\"" /([^"\\]|\\.)*/ "\""
 %import common.NUMBER
 %import common.WS
 %ignore WS
