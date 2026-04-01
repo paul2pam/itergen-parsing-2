@@ -124,6 +124,7 @@ for i, scenario in enumerate(SCENARIOS):
         tokens_before_tool_name = iter_gen.session_tokens.shape[1]
         iter_gen.forward(unit='tool_name', num=1)
         tokens_after_tool_name = iter_gen.session_tokens.shape[1]
+        print(f"  [debug] tokens — before tool_name: {tokens_before_tool_name}, after tool_name: {tokens_after_tool_name}, tool_name tokens: {tokens_after_tool_name - tokens_before_tool_name}")
 
         tool_name_tokens = iter_gen.view('tool_name')
         if not tool_name_tokens or not tool_name_tokens[0]:
@@ -143,6 +144,7 @@ for i, scenario in enumerate(SCENARIOS):
             iter_gen.forward()
             tokens_after_args = iter_gen.session_tokens.shape[1]
             args_token_count = tokens_after_args - tokens_after_tool_name
+            print(f"  [debug] tokens — after args: {tokens_after_args}, args tokens: {args_token_count}, will rewind: {args_token_count}")
 
             raw = iter_gen.structured_gen[0]
             print(f"  [debug] generated: {raw!r}")
