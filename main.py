@@ -41,6 +41,13 @@ iter_gen = IterGen(
     top_p=0.9,
 )
 
+# Patch tokenizer to always disable Qwen3 thinking mode
+_orig_apply_chat_template = iter_gen.tokenizer.apply_chat_template
+def _apply_chat_template_no_think(conversation, **kwargs):
+    kwargs['enable_thinking'] = False
+    return _orig_apply_chat_template(conversation, **kwargs)
+iter_gen.tokenizer.apply_chat_template = _apply_chat_template_no_think
+
 
 def get_value_type(value):
     """Map a JSON-parsed value to the type string used in TOOLS."""
@@ -79,6 +86,7 @@ def build_prompt(scenario):
         {
             "role": "system",
             "content": (
+                "do not ever enter thinking/reasoning mode for any reason at all."
                 "/no_think "
                 "You are a tool-calling assistant. "
                 "Respond with a single JSON tool call in the format "
@@ -97,8 +105,6 @@ print(f"\n{'='*60}")
 for i, scenario in enumerate(SCENARIOS):
     print(f"\nScenario {i+1}: {scenario}")
     prompt = build_prompt(scenario)
-    iter_gen.start(prompt)
-    print("Now we start generating attempts")
 
     result = None
     retries = 0
@@ -106,46 +112,32 @@ for i, scenario in enumerate(SCENARIOS):
 
     for attempt in range(MAX_RETRIES):
         iter_gen.start(prompt)
+        iter_gen.forward()
 
-        # Phase 1: generate and validate tool_name, clean restart on failure
-        iter_gen.forward(unit='tool_name', num=1)
-        print(f"  [debug] after tool_name forward: {iter_gen.structured_gen[0]!r}")
-        tool_name_tokens = iter_gen.view('tool_name')
-        if not tool_name_tokens or not tool_name_tokens[0]:
-            reason = "no tool_name generated"
+        raw = iter_gen.structured_gen[0]
+        print(f"  [debug] generated: {raw!r}")
+
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            reason = "JSON parse error"
             retries += 1
             continue
-        tool_name = tool_name_tokens[0][-1].strip('"')
+
+        tool_name = parsed.get("name", "")
         if tool_name not in TOOLS:
             reason = f"unknown tool '{tool_name}'"
             retries += 1
             continue
 
-        # Phase 2: generate and validate arglist, backtracking arglist on failure
-        arg_retries = 0
-        for arg_attempt in range(MAX_RETRIES):
-            iter_gen.forward()  # generates arglist + closing } to complete start
-            raw = iter_gen.structured_gen[0]
-            try:
-                parsed = json.loads(raw)
-                args = parsed.get("args", {})
-            except json.JSONDecodeError:
-                reason = "JSON parse error"
-                iter_gen.backward(unit='arglist', num=1)
-                arg_retries += 1
-                continue
-            ok, reason = check_signature(tool_name, args)
-            if not ok:
-                iter_gen.backward(unit='arglist', num=1)
-                arg_retries += 1
-                continue
-            result = parsed
-            retries += arg_retries
-            break
+        args = parsed.get("args", {})
+        ok, reason = check_signature(tool_name, args)
+        if not ok:
+            retries += 1
+            continue
 
-        if result:
-            break
-        retries += arg_retries
+        result = parsed
+        break
 
     if result:
         print(f"  Tool:    {result['name']}")
