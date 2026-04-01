@@ -119,32 +119,54 @@ for i, scenario in enumerate(SCENARIOS):
 
     for attempt in range(MAX_RETRIES):
         iter_gen.start(prompt)
-        iter_gen.forward()
 
-        raw = iter_gen.structured_gen[0]
-        print(f"  [debug] generated: {raw!r}")
+        # Generate tool name, record token count before and after
+        tokens_before_tool_name = iter_gen.session_tokens.shape[1]
+        iter_gen.forward(unit='tool_name', num=1)
+        tokens_after_tool_name = iter_gen.session_tokens.shape[1]
 
-        try:
-            parsed = json.loads(raw)
-        except json.JSONDecodeError:
-            reason = "JSON parse error"
+        tool_name_tokens = iter_gen.view('tool_name')
+        if not tool_name_tokens or not tool_name_tokens[0]:
+            reason = "no tool_name generated"
             retries += 1
             continue
+        tool_name = tool_name_tokens[0][-1].strip('"')
+        print(f"  [debug] tool_name: {tool_name!r}")
 
-        tool_name = parsed.get("name", "")
         if tool_name not in TOOLS:
             reason = f"unknown tool '{tool_name}'"
             retries += 1
             continue
 
-        args = parsed.get("args", {})
-        ok, reason = check_signature(tool_name, args)
-        if not ok:
-            retries += 1
-            continue
+        # Generate arglist, record token count after
+        for arg_attempt in range(MAX_RETRIES):
+            iter_gen.forward()
+            tokens_after_args = iter_gen.session_tokens.shape[1]
+            args_token_count = tokens_after_args - tokens_after_tool_name
 
-        result = parsed
-        break
+            raw = iter_gen.structured_gen[0]
+            print(f"  [debug] generated: {raw!r}")
+
+            try:
+                parsed = json.loads(raw)
+                args = parsed.get("args", {})
+            except json.JSONDecodeError:
+                reason = "JSON parse error"
+                iter_gen.backward(unit='token', num=args_token_count)
+                retries += 1
+                continue
+
+            ok, reason = check_signature(tool_name, args)
+            if not ok:
+                iter_gen.backward(unit='token', num=args_token_count)
+                retries += 1
+                continue
+
+            result = parsed
+            break
+
+        if result:
+            break
 
     if result:
         print(f"  Tool:    {result['name']}")
