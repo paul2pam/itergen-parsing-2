@@ -81,17 +81,24 @@ def check_signature(tool_name, args):
     return True, None
 
 
+def format_tools():
+    lines = []
+    for name, params in TOOLS.items():
+        param_str = ", ".join(f"{p}: {t}" for p, t in params.items())
+        lines.append(f"  {name}({param_str})")
+    return "\n".join(lines)
+
+
 def build_prompt(scenario):
     return [
         {
             "role": "system",
             "content": (
-                "do not ever enter thinking/reasoning mode for any reason at all."
-                "/no_think "
                 "You are a tool-calling assistant. "
                 "Respond with a single JSON tool call in the format "
                 "{\"name\": \"<tool_name>\", \"args\": {<arguments>}}. "
-                f"Available tools: {', '.join(TOOL_NAMES)}."
+                "Use the exact parameter names as defined below.\n"
+                f"Available tools:\n{format_tools()}"
             ),
         },
         {
