@@ -79,6 +79,7 @@ def build_prompt(scenario):
         {
             "role": "system",
             "content": (
+                "/no_think "
                 "You are a tool-calling assistant. "
                 "Respond with a single JSON tool call in the format "
                 "{\"name\": \"<tool_name>\", \"args\": {<arguments>}}. "
@@ -97,49 +98,54 @@ for i, scenario in enumerate(SCENARIOS):
     print(f"\nScenario {i+1}: {scenario}")
     prompt = build_prompt(scenario)
     iter_gen.start(prompt)
+    print("Now we start generating attempts")
 
     result = None
     retries = 0
     reason = None
 
     for attempt in range(MAX_RETRIES):
-        iter_gen.forward()
+        iter_gen.start(prompt)
 
-        # Extract tool_name (strip surrounding quotes)
+        # Phase 1: generate and validate tool_name, clean restart on failure
+        iter_gen.forward(unit='tool_name', num=1)
+        print(f"  [debug] after tool_name forward: {iter_gen.structured_gen[0]!r}")
         tool_name_tokens = iter_gen.view('tool_name')
         if not tool_name_tokens or not tool_name_tokens[0]:
             reason = "no tool_name generated"
-            iter_gen.backward(unit='tool_call')
             retries += 1
             continue
         tool_name = tool_name_tokens[0][-1].strip('"')
-
-        # Validate tool name
         if tool_name not in TOOLS:
             reason = f"unknown tool '{tool_name}'"
-            iter_gen.backward(unit='tool_call')
             retries += 1
             continue
 
-        # Parse full output and check signature
-        raw = iter_gen.structured_gen[0]
-        try:
-            parsed = json.loads(raw)
-            args = parsed.get("args", {})
-        except json.JSONDecodeError:
-            reason = "JSON parse error"
-            iter_gen.backward(unit='tool_call')
-            retries += 1
-            continue
+        # Phase 2: generate and validate arglist, backtracking arglist on failure
+        arg_retries = 0
+        for arg_attempt in range(MAX_RETRIES):
+            iter_gen.forward()  # generates arglist + closing } to complete start
+            raw = iter_gen.structured_gen[0]
+            try:
+                parsed = json.loads(raw)
+                args = parsed.get("args", {})
+            except json.JSONDecodeError:
+                reason = "JSON parse error"
+                iter_gen.backward(unit='arglist', num=1)
+                arg_retries += 1
+                continue
+            ok, reason = check_signature(tool_name, args)
+            if not ok:
+                iter_gen.backward(unit='arglist', num=1)
+                arg_retries += 1
+                continue
+            result = parsed
+            retries += arg_retries
+            break
 
-        ok, reason = check_signature(tool_name, args)
-        if not ok:
-            iter_gen.backward(unit='tool_call')
-            retries += 1
-            continue
-
-        result = parsed
-        break
+        if result:
+            break
+        retries += arg_retries
 
     if result:
         print(f"  Tool:    {result['name']}")
